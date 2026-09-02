@@ -21,6 +21,9 @@ statického testu nebo z ručně zadané tahové křivky vytvoří motorový sou
 * **Ruční tvorba křivky**: krokování po 100, 200, …, 1000 ms slouží právě tady –
   zvolíte krok a dobu hoření, vytvoří se mřížka a tah v newtonech se zapisuje
   dvojklikem přímo do tabulky.
+* **Ruční ořez importované křivky** – dvěma posuvníky pod grafem (nebo zapsáním
+  časů) zkrátíte záznam zleva i zprava přesně tam, kam chcete. Graf se překresluje
+  během tažení a šedě ukazuje i kousek toho, co ořez ubral.
 * **Živý graf** – při každé úpravě se překreslí; na pozadí je šedě vidět původní
   naměřený průběh.
 * **Souhrn křivky**: doba hoření, vrcholový a průměrný tah, celkový impuls, třída
@@ -58,7 +61,8 @@ zjednodušený graf a funguje dál – žádná další knihovna není potřeba.
 
 1. **Import dat** – vyberte soubor a zkontrolujte sloupce. Ve výchozím nastavení
    se použijí přesně naměřené body; převzorkování na pevný krok je jen volitelná
-   možnost.
+   možnost. Posuvníky *Ořez naměřené křivky* pod grafem záznam zkrátíte na tu
+   část, kterou chcete mít v souboru.
 2. **Ruční křivka** – nebo si křivku naklikejte sami: krok, doba hoření,
    *Vytvořit mřížku* a pak dvojklikem hodnoty tahu. Tlačítko *Přenést do ruční
    tabulky* umožní doladit i importovaná data.

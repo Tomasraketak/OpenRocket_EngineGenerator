@@ -7,7 +7,6 @@ import subprocess
 import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from dataclasses import replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import curve, dataimport, engfile
@@ -68,6 +67,11 @@ class App(tk.Tk):
         self.var_shift = tk.BooleanVar(value=True)
         self.var_preserve = tk.BooleanVar(value=True)
 
+        self.var_cut_start = tk.DoubleVar(value=0.0)
+        self.var_cut_end = tk.DoubleVar(value=0.0)
+        self._cut_limits = (0.0, 0.0)
+        self._updating_cut = False
+
         self.var_manual_step = tk.IntVar(value=int(self.cfg["step_ms"]))
         self.var_manual_duration = tk.DoubleVar(value=3.0)
 
@@ -85,6 +89,7 @@ class App(tk.Tk):
         self.var_overwrite = tk.BooleanVar(value=bool(self.cfg["overwrite_without_asking"]))
         self.var_status = tk.StringVar(value="Připraveno.")
         self.var_target_hint = tk.StringVar()
+        self.var_cut_hint = tk.StringVar()
         self._filename_edited = False
         self.var_output_dir.trace_add("write", lambda *_: self._refresh_target_hint())
 
@@ -130,6 +135,9 @@ class App(tk.Tk):
 
         stats = ttk.LabelFrame(right, text="Souhrn křivky")
         stats.pack(side="bottom", fill="x", pady=(8, 0))
+
+        self.cut_frame = ttk.LabelFrame(right, text="Ořez naměřené křivky")
+        self._build_cut_controls(self.cut_frame)
         self.lbl_stats = ttk.Label(stats, justify="left", anchor="w")
         self.lbl_stats.pack(fill="x", padx=8, pady=6)
         self.txt_warnings = tk.Text(stats, height=4, wrap="word", relief="flat",
@@ -158,6 +166,33 @@ class App(tk.Tk):
         status.pack(fill="x", side="bottom")
         ttk.Separator(status).pack(fill="x")
         ttk.Label(status, textvariable=self.var_status, anchor="w").pack(fill="x", padx=10, pady=4)
+
+    def _build_cut_controls(self, parent: ttk.LabelFrame) -> None:
+        """Posuvníky pro ruční zkrácení záznamu zleva a zprava."""
+        body = ttk.Frame(parent)
+        body.pack(fill="x", padx=8, pady=6)
+        body.columnconfigure(1, weight=1)
+
+        self.cut_scales = {}
+        for row, (key, label, variable) in enumerate((
+                ("start", "začátek:", self.var_cut_start),
+                ("end", "konec:", self.var_cut_end))):
+            ttk.Label(body, text=label, width=9).grid(row=row, column=0, sticky="w", pady=2)
+            scale = ttk.Scale(body, orient="horizontal", variable=variable,
+                              command=lambda _value, side=key: self._on_cut_change(side))
+            scale.grid(row=row, column=1, sticky="ew", padx=6, pady=2)
+            entry = ttk.Entry(body, width=8, justify="right")
+            entry.grid(row=row, column=2, pady=2)
+            entry.bind("<Return>", lambda _e, side=key: self._on_cut_typed(side))
+            entry.bind("<FocusOut>", lambda _e, side=key: self._on_cut_typed(side))
+            ttk.Label(body, text="s").grid(row=row, column=3, sticky="w", padx=(4, 0))
+            self.cut_scales[key] = (scale, entry)
+
+        buttons = ttk.Frame(parent)
+        buttons.pack(fill="x", padx=8, pady=(0, 6))
+        ttk.Button(buttons, text="Zrušit ořez", command=self.on_reset_cut).pack(side="left")
+        ttk.Label(buttons, textvariable=self.var_cut_hint, foreground="#666666").pack(
+            side="left", padx=10)
 
     # ------------------------------------------------------------------ #
     # Záložka 1 - import
@@ -418,6 +453,7 @@ class App(tk.Tk):
         self.workbook = None
         self.raw_series = []          # u .eng není co zobrazovat na pozadí
         self.display_raw = []
+        self._reset_cut_limits()
         self.points = list(points)
         self._apply_spec(spec)
         self.cmb_sheet.configure(values=[])
@@ -495,7 +531,87 @@ class App(tk.Tk):
             return
         scale = 0.001 if self.var_time_unit.get().startswith("mili") else 1.0
         self.raw_series = dataimport.extract_series(sheet, time_col, thrust_col, scale)
+        self._reset_cut_limits()
         self._on_process_change()
+
+    # ------------------------------------------------------------------ #
+    # Ruční ořez
+    # ------------------------------------------------------------------ #
+    def _reset_cut_limits(self) -> None:
+        """Nastaví rozsah posuvníků podle načtených dat a zruší dosavadní ořez."""
+        if len(self.raw_series) < 2:
+            self._cut_limits = (0.0, 0.0)
+            self.cut_frame.pack_forget()
+            return
+        low, high = self.raw_series[0][0], self.raw_series[-1][0]
+        self._cut_limits = (low, high)
+        self._updating_cut = True
+        try:
+            for key, (scale, _entry) in self.cut_scales.items():
+                scale.configure(from_=low, to=high)
+            self.var_cut_start.set(low)
+            self.var_cut_end.set(high)
+        finally:
+            self._updating_cut = False
+        self.cut_frame.pack(side="bottom", fill="x", pady=(8, 0), before=self.plot.widget)
+        self._refresh_cut_labels()
+
+    def on_reset_cut(self) -> None:
+        low, high = self._cut_limits
+        if high <= low:
+            return
+        self._updating_cut = True
+        try:
+            self.var_cut_start.set(low)
+            self.var_cut_end.set(high)
+        finally:
+            self._updating_cut = False
+        self._on_process_change()
+
+    def _on_cut_change(self, side: str) -> None:
+        """Posuvník se pohnul - pohlídat, aby se konce nepřekřížily."""
+        if self._updating_cut or self._cut_limits[1] <= self._cut_limits[0]:
+            return
+        low, high = self._cut_limits
+        gap = max((high - low) / 200.0, 1e-4)
+        start, end = self.var_cut_start.get(), self.var_cut_end.get()
+        self._updating_cut = True
+        try:
+            if side == "start" and start > end - gap:
+                self.var_cut_start.set(max(low, end - gap))
+            elif side == "end" and end < start + gap:
+                self.var_cut_end.set(min(high, start + gap))
+        finally:
+            self._updating_cut = False
+        self._on_process_change()
+
+    def _on_cut_typed(self, side: str) -> str:
+        """Hodnota zapsaná ručně do políčka vedle posuvníku."""
+        _scale, entry = self.cut_scales[side]
+        value = _safe_float(entry.get(), None)
+        low, high = self._cut_limits
+        if value is None or high <= low:
+            self._refresh_cut_labels()
+            return "break"
+        variable = self.var_cut_start if side == "start" else self.var_cut_end
+        self._updating_cut = True
+        try:
+            variable.set(min(max(value, low), high))
+        finally:
+            self._updating_cut = False
+        self._on_cut_change(side)
+        return "break"
+
+    def _refresh_cut_labels(self) -> None:
+        for key, (_scale, entry) in self.cut_scales.items():
+            value = self.var_cut_start.get() if key == "start" else self.var_cut_end.get()
+            if entry is not self.focus_get():
+                entry.delete(0, "end")
+                entry.insert(0, "%.3f" % value)
+        low, high = self._cut_limits
+        kept = self.var_cut_end.get() - self.var_cut_start.get()
+        self.var_cut_hint.set("ponecháno %.3f s z %.3f s záznamu" % (max(kept, 0.0), high - low)
+                              if high > low else "")
 
     def _reload_file(self) -> None:
         if self.var_path.get():
@@ -505,6 +621,9 @@ class App(tk.Tk):
         if not self.raw_series:
             self._refresh()
             return
+        low, high = self._cut_limits
+        cut_start = self.var_cut_start.get() if high > low else None
+        cut_end = self.var_cut_end.get() if high > low else None
         options = curve.ProcessOptions(
             subtract_baseline=self.var_baseline.get(),
             trim_to_burn=self.var_trim.get(),
@@ -515,11 +634,14 @@ class App(tk.Tk):
             max_points=int(self.var_max_points.get() or 32),
             smooth_window=int(self.var_smooth.get() or 1),
             preserve_impulse=self.var_preserve.get(),
+            cut_start_s=cut_start,
+            cut_end_s=cut_end,
         )
-        self.points = curve.process(self.raw_series, options)
-        # Pozadí grafu prochází stejným posunem/ořezem, jinak by křivky neseděly na sebe.
-        background = replace(options, mode="raw", end_with_zero=False)
-        self.display_raw = curve.process(self.raw_series, background)
+        result = curve.process_detailed(self.raw_series, options)
+        self.points = result.points
+        # Šedě je vidět i kus záznamu za ořezem, ale ne celý - jinak by se osa
+        # roztáhla přes několik sekund ticha před zážehem a po něm.
+        self.display_raw = _around(result.baseline, self.points)
         self.cfg["step_ms"] = options.step_ms
         self._fill_table()
         self._refresh()
@@ -598,6 +720,7 @@ class App(tk.Tk):
         self.points = []
         self.raw_series = []
         self.display_raw = []
+        self._reset_cut_limits()
         self._fill_table()
         self._refresh()
 
@@ -808,6 +931,7 @@ class App(tk.Tk):
         self.plot.draw(self.points, self.display_raw,
                        self.motor_vars["name"].get() or "Tahová křivka")
         self._refresh_stats()
+        self._refresh_cut_labels()
         if not self._filename_edited:
             self.var_filename.set(engfile.suggest_filename(self._current_spec(), self.points))
         self._refresh_target_hint()
@@ -859,6 +983,16 @@ def _safe_float(value: Any, fallback: Optional[float]) -> Any:
         return float(str(value).replace(",", ".").strip())
     except (TypeError, ValueError):
         return fallback
+
+
+def _around(background: Sequence[Point], points: Sequence[Point]) -> List[Point]:
+    """Ořízne pozadí grafu na okolí výsledné křivky."""
+    if not points or not background:
+        return list(background)
+    duration = points[-1][0] - points[0][0]
+    margin = max(0.25 * duration, 0.5)
+    low, high = points[0][0] - margin, points[-1][0] + margin
+    return [(t, f) for t, f in background if low <= t <= high]
 
 
 def _pretty(value: Any) -> str:

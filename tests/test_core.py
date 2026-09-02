@@ -142,6 +142,37 @@ class CurveTest(unittest.TestCase):
             self.assertGreater(time_s, source_times[-1])  # jen doplněná koncová nula
         self.assertGreaterEqual(len(points), len(raw))
 
+    def test_manual_cut_limits_the_curve(self):
+        raw = self.synthetic()
+        options = curve.ProcessOptions(mode="raw", trim_to_burn=False, subtract_baseline=False,
+                                       shift_to_zero=False, cut_start_s=1.5, cut_end_s=2.5)
+        points = curve.process(raw, options)
+        pushing = [t for t, f in points if f > 0]
+        self.assertGreaterEqual(min(pushing), 1.5)
+        self.assertLessEqual(max(pushing), 2.5)
+        self.assertEqual(points[0], (0.0, 0.0))   # .eng začíná v nule
+        self.assertEqual(points[-1][1], 0.0)
+
+    def test_manual_cut_survives_swapped_bounds(self):
+        series = [(index * 0.1, 10.0) for index in range(20)]
+        self.assertEqual(curve.cut_range(series, 1.5, 0.5),
+                         curve.cut_range(series, 0.5, 1.5))
+
+    def test_manual_cut_ignored_when_it_would_empty_the_curve(self):
+        series = [(index * 0.1, 10.0) for index in range(20)]
+        self.assertEqual(len(curve.cut_range(series, 5.0, 6.0)), len(series))
+
+    def test_detailed_result_reports_offset_and_background(self):
+        raw = self.synthetic()
+        result = curve.process_detailed(raw, curve.ProcessOptions(mode="raw", cut_start_s=1.5,
+                                                                  cut_end_s=2.5))
+        self.assertAlmostEqual(result.offset_s, 1.5, delta=0.02)
+        self.assertAlmostEqual(result.cut_start_s, 1.5, delta=0.02)
+        self.assertAlmostEqual(result.cut_end_s, 2.5, delta=0.02)
+        # Pozadí drží celý záznam, ale ve stejné časové ose jako výsledek.
+        self.assertGreater(len(result.baseline), len(result.points))
+        self.assertLess(result.baseline[0][0], 0.0)
+
     def test_make_grid(self):
         grid = curve.make_grid(500, 2.0)
         self.assertEqual([t for t, _ in grid], [0.0, 0.5, 1.0, 1.5, 2.0])

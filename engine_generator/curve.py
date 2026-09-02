@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence, Tuple
 
 Point = Tuple[float, float]
 
@@ -27,6 +27,8 @@ class ProcessOptions:
     smooth_window: int = 1              # klouzavý průměr (počet vzorků, 1 = vypnuto)
     end_with_zero: bool = True          # doplnit koncový nulový bod
     preserve_impulse: bool = True       # dorovnat celkový impuls po zjednodušení
+    cut_start_s: Optional[float] = None  # ruční ořez zleva (v čase zdrojových dat)
+    cut_end_s: Optional[float] = None    # ruční ořez zprava
 
 
 def baseline_level(series: Sequence[Point], before_s: float) -> float:
@@ -173,11 +175,40 @@ def reduce_points(series: Sequence[Point], max_points: int) -> List[Point]:
     return best
 
 
+@dataclass
+class Result:
+    """Výsledek zpracování i s údaji, které potřebuje graf."""
+
+    points: List[Point] = field(default_factory=list)
+    baseline: List[Point] = field(default_factory=list)  # celá data po odečtu klidu
+    offset_s: float = 0.0                                # o kolik se posunula časová osa
+    cut_start_s: float = 0.0                             # skutečně použitý ořez
+    cut_end_s: float = 0.0
+
+
+def cut_range(series: Sequence[Point], start_s: Optional[float],
+              end_s: Optional[float]) -> List[Point]:
+    """Ořez záznamu zleva a zprava na časy zvolené uživatelem."""
+    if not series:
+        return []
+    low = series[0][0] if start_s is None else start_s
+    high = series[-1][0] if end_s is None else end_s
+    if low > high:
+        low, high = high, low
+    trimmed = [(t, f) for t, f in series if low <= t <= high]
+    return trimmed if len(trimmed) >= 2 else list(series)
+
+
 def process(series: Sequence[Point], options: ProcessOptions) -> List[Point]:
     """Surová data ze siloměru -> body pro .eng."""
+    return process_detailed(series, options).points
+
+
+def process_detailed(series: Sequence[Point], options: ProcessOptions) -> Result:
+    """Jako :func:`process`, ale vrací i podklady pro vykreslení."""
     data = [(float(t), float(f)) for t, f in series]
     if not data:
-        return []
+        return Result()
 
     data = smooth(data, options.smooth_window)
 
@@ -190,6 +221,12 @@ def process(series: Sequence[Point], options: ProcessOptions) -> List[Point]:
             data = [(t, f - level) for t, f in data]
             peak = max(f for _, f in data)
 
+    # Ruční ořez až po odečtu klidové hodnoty - ta se počítá z předzáznamu,
+    # který uživatel často odřízne.
+    baseline_data = data
+    data = cut_range(data, options.cut_start_s, options.cut_end_s)
+    peak = max((f for _, f in data), default=0.0)
+
     if options.trim_to_burn and peak > 0:
         threshold = peak * max(options.threshold_pct, 0.0) / 100.0
         hold = max(2, samples_for(data, options.hold_s))
@@ -198,6 +235,8 @@ def process(series: Sequence[Point], options: ProcessOptions) -> List[Point]:
             # Necháme jeden vzorek před a za oknem, aby náběh nebyl useknutý.
             data = data[max(0, first - 1):min(len(data), last + 2)]
 
+    cut_start, cut_end = (data[0][0], data[-1][0]) if data else (0.0, 0.0)
+    offset = 0.0
     if options.shift_to_zero and data:
         offset = data[0][0]
         data = [(t - offset, f) for t, f in data]
@@ -226,7 +265,12 @@ def process(series: Sequence[Point], options: ProcessOptions) -> List[Point]:
         data.append((round(data[-1][0] + gap, 6), 0.0))
     elif options.end_with_zero and data:
         data[-1] = (data[-1][0], 0.0)
-    return [(round(t, 6), round(f, 4)) for t, f in data]
+
+    background = [(round(t - offset, 6), max(0.0, round(f, 4)) if options.clip_negative
+                   else round(f, 4)) for t, f in baseline_data]
+    return Result(points=[(round(t, 6), round(f, 4)) for t, f in data],
+                  baseline=background, offset_s=offset,
+                  cut_start_s=cut_start, cut_end_s=cut_end)
 
 
 def _last_gap(series: Sequence[Point], fallback: float = 0.01) -> float:
