@@ -129,6 +129,19 @@ class CurveTest(unittest.TestCase):
         self.assertLess(engfile.burn_time(points), 1.5)
         self.assertAlmostEqual(engfile.peak_thrust(points), 100.0, delta=0.1)
 
+    def test_raw_mode_keeps_every_sample(self):
+        raw = self.synthetic()
+        points = curve.process(raw, curve.ProcessOptions(mode="raw", trim_to_burn=False,
+                                                         subtract_baseline=False,
+                                                         shift_to_zero=False))
+        # Žádné převzorkování: časy odpovídají vzorkům ze zdroje.
+        source_times = [round(t, 6) for t, _ in raw]
+        for time_s, _thrust in points:
+            if time_s in source_times:
+                continue
+            self.assertGreater(time_s, source_times[-1])  # jen doplněná koncová nula
+        self.assertGreaterEqual(len(points), len(raw))
+
     def test_make_grid(self):
         grid = curve.make_grid(500, 2.0)
         self.assertEqual([t for t, _ in grid], [0.0, 0.5, 1.0, 1.5, 2.0])

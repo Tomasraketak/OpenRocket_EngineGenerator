@@ -14,10 +14,13 @@ statického testu nebo z ručně zadané tahové křivky vytvoří motorový sou
 * **Zpracování surového záznamu**: odečtení klidové hodnoty siloměru, ořez na dobu
   hoření (práh v % vrcholu, krátké špičky ze zážehové linky se ignorují), posun
   zážehu na čas 0, vyhlazení a dorovnání celkového impulsu.
-* **Převzorkování po pevných krocích** 100, 200, …, 1000 ms, nebo zjednodušení na
-  zvolený počet bodů se zachováním tvaru křivky.
-* **Ruční tvorba křivky**: zvolíte krok (100–1000 ms) a dobu hoření, vytvoří se
-  mřížka a tah v newtonech se zapisuje dvojklikem přímo do tabulky.
+* **Naměřená data se přebírají přesně** – do `.eng` jde každý vzorek se svým časem,
+  nic se nepřevzorkovává. Volitelně (druhá a třetí volba v sekci *Zpracování*) lze
+  záznam převzorkovat na pevný krok 100–1000 ms nebo zjednodušit na zvolený počet
+  bodů se zachováním tvaru křivky – například když má být soubor menší.
+* **Ruční tvorba křivky**: krokování po 100, 200, …, 1000 ms slouží právě tady –
+  zvolíte krok a dobu hoření, vytvoří se mřížka a tah v newtonech se zapisuje
+  dvojklikem přímo do tabulky.
 * **Živý graf** – při každé úpravě se překreslí; na pozadí je šedě vidět původní
   naměřený průběh.
 * **Souhrn křivky**: doba hoření, vrcholový a průměrný tah, celkový impuls, třída
@@ -53,8 +56,9 @@ zjednodušený graf a funguje dál – žádná další knihovna není potřeba.
 
 ## Postup práce
 
-1. **Import dat** – vyberte soubor, zkontrolujte sloupce a zvolte způsob
-   zpracování (pevný krok / zjednodušení / beze změny).
+1. **Import dat** – vyberte soubor a zkontrolujte sloupce. Ve výchozím nastavení
+   se použijí přesně naměřené body; převzorkování na pevný krok je jen volitelná
+   možnost.
 2. **Ruční křivka** – nebo si křivku naklikejte sami: krok, doba hoření,
    *Vytvořit mřížku* a pak dvojklikem hodnoty tahu. Tlačítko *Přenést do ruční
    tabulky* umožní doladit i importovaná data.

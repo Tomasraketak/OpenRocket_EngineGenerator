@@ -220,10 +220,20 @@ def process(series: Sequence[Point], options: ProcessOptions) -> List[Point]:
     if data and data[0][0] > 0:
         data.insert(0, (0.0, 0.0 if options.end_with_zero else data[0][1]))
     if options.end_with_zero and data and data[-1][1] != 0.0:
-        data.append((round(data[-1][0] + options.step_ms / 1000.0, 6), 0.0))
+        # Dohoření navazuje krokem podle režimu: u nedotčených dat vzorkovacím,
+        # u převzorkování zvoleným.
+        gap = options.step_ms / 1000.0 if options.mode == "step" else _last_gap(data)
+        data.append((round(data[-1][0] + gap, 6), 0.0))
     elif options.end_with_zero and data:
         data[-1] = (data[-1][0], 0.0)
     return [(round(t, 6), round(f, 4)) for t, f in data]
+
+
+def _last_gap(series: Sequence[Point], fallback: float = 0.01) -> float:
+    """Rozestup posledních dvou vzorků - pro doplnění koncového nulového bodu."""
+    if len(series) < 2:
+        return fallback
+    return max(series[-1][0] - series[-2][0], 1e-4)
 
 
 def _impulse(series: Sequence[Point]) -> float:

@@ -58,7 +58,7 @@ class App(tk.Tk):
         self.var_thrust_col = tk.StringVar()
         self.var_time_unit = tk.StringVar(value="sekundy")
 
-        self.var_mode = tk.StringVar(value="step")
+        self.var_mode = tk.StringVar(value="raw")
         self.var_step = tk.IntVar(value=int(self.cfg["step_ms"]))
         self.var_max_points = tk.IntVar(value=32)
         self.var_threshold = tk.DoubleVar(value=5.0)
@@ -190,11 +190,17 @@ class App(tk.Tk):
         body = ttk.Frame(options)
         body.pack(fill="x", padx=8, pady=8)
 
-        ttk.Radiobutton(body, text="Převzorkovat na pevný krok", value="step",
+        ttk.Radiobutton(body, text="Použít přesně naměřené body (doporučeno)", value="raw",
                         variable=self.var_mode, command=self._on_process_change).grid(
                             row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, text="do .eng jde každý naměřený vzorek; mění se jen to, co je zaškrtnuté níže",
+                  foreground="#777777").grid(row=1, column=0, columnspan=2, sticky="w", padx=(20, 0))
+
+        ttk.Radiobutton(body, text="Převzorkovat na pevný krok", value="step",
+                        variable=self.var_mode, command=self._on_process_change).grid(
+                            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
         step_row = ttk.Frame(body)
-        step_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=(20, 0))
+        step_row.grid(row=3, column=0, columnspan=2, sticky="w", padx=(20, 0))
         ttk.Label(step_row, text="krok:").pack(side="left")
         step_combo = ttk.Combobox(step_row, textvariable=self.var_step, width=6, state="readonly",
                                   values=curve.STEP_CHOICES_MS)
@@ -204,21 +210,17 @@ class App(tk.Tk):
 
         ttk.Radiobutton(body, text="Zjednodušit na daný počet bodů", value="reduce",
                         variable=self.var_mode, command=self._on_process_change).grid(
-                            row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+                            row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         points_row = ttk.Frame(body)
-        points_row.grid(row=3, column=0, columnspan=2, sticky="w", padx=(20, 0))
+        points_row.grid(row=5, column=0, columnspan=2, sticky="w", padx=(20, 0))
         ttk.Label(points_row, text="max. bodů:").pack(side="left")
         spin = ttk.Spinbox(points_row, from_=4, to=200, textvariable=self.var_max_points, width=6,
                            command=self._on_process_change)
         spin.pack(side="left", padx=4)
         spin.bind("<Return>", self._on_process_change)
 
-        ttk.Radiobutton(body, text="Použít data beze změny", value="raw",
-                        variable=self.var_mode, command=self._on_process_change).grid(
-                            row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
-
         extra = ttk.Frame(body)
-        extra.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        extra.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         ttk.Checkbutton(extra, text="odečíst klidovou hodnotu siloměru", variable=self.var_baseline,
                         command=self._on_process_change).grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(extra, text="oříznout na dobu hoření", variable=self.var_trim,
@@ -526,7 +528,6 @@ class App(tk.Tk):
         if not self.points:
             messagebox.showinfo("Není co přenést", "Nejprve načtěte data.", parent=self)
             return
-        self.var_manual_step.set(int(self.var_step.get() or 100))
         self.var_manual_duration.set(round(self.points[-1][0], 3))
         self._fill_table()
         self.var_status.set("Křivka je v ruční tabulce, můžete ji upravit.")

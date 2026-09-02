@@ -263,8 +263,8 @@ def validate(spec: MotorSpec, points: Sequence[Point]) -> Tuple[List[str], List[
         warnings.append("Poslední bod křivky nemá nulový tah - OpenRocket to očekává.")
     if times[0] > 0 and points[0][1] > 0:
         warnings.append("Křivka nezačíná v nule; přidejte bod (0 s; 0 N).")
-    if len(points) > 200:
-        warnings.append("Křivka má %d bodů; pro OpenRocket obvykle stačí 20-50." % len(points))
+    if len(points) > 1000:
+        warnings.append("Křivka má %d bodů; zvažte převzorkování, soubor bude velký." % len(points))
 
     impulse = total_impulse(points)
     if impulse > 0:
