@@ -1,0 +1,2 @@
+# Volitelné - graf je hezčí, ale program funguje i bez toho.
+matplotlib>=3.5
